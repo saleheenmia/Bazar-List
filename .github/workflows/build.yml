@@ -33,6 +33,14 @@ jobs:
         run: |
           sed -i 's/android:label="[^"]*"/android:label="বাজারের তালিকা"/' build_app/android/app/src/main/AndroidManifest.xml
 
+      - name: Set app icon
+        working-directory: build_app
+        run: |
+          cp ../icon.png icon.png
+          flutter pub add --dev flutter_launcher_icons
+          printf '\nflutter_launcher_icons:\n  android: true\n  ios: false\n  image_path: "icon.png"\n' >> pubspec.yaml
+          dart run flutter_launcher_icons
+
       - name: Build APK
         working-directory: build_app
         run: |
