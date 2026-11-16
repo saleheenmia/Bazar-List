@@ -21,14 +21,30 @@ class BazarApp extends StatelessWidget {
   }
 }
 
+// ডিফল্ট একক ও ড্রপডাউনের তালিকা
+const String defaultUnit = 'পিস';
+const String otherUnit = 'অন্যান্য';
+const List<String> unitOptions = [
+  'পিস',
+  'কেজি',
+  'গ্রাম',
+  'লিটার',
+  'ডজন',
+  'হালি',
+  'প্যাকেট',
+  'আঁটি',
+];
+
 class Item {
   String name;
   double qty;
   String unit;
   double price;
   bool done;
+  int created; // তৈরির সময় (millisecondsSinceEpoch), পুরনো আইটেমের জন্য 0
 
-  Item(this.name, this.qty, this.unit, this.price, [this.done = false]);
+  Item(this.name, this.qty, this.unit, this.price,
+      [this.done = false, this.created = 0]);
 
   double get total => price * qty;
 
@@ -38,6 +54,7 @@ class Item {
         'u': unit,
         'p': price,
         'd': done,
+        'c': created,
       };
 
   factory Item.fromJson(Map<String, dynamic> m) {
@@ -47,6 +64,7 @@ class Item {
       (m['u'] ?? '') as String,
       (m['p'] as num).toDouble(),
       m['d'] as bool,
+      ((m['c'] ?? 0) as num).toInt(),
     );
   }
 }
@@ -204,65 +222,101 @@ class _BazarScreenState extends State<BazarScreen> {
   Future<void> _editItem([Item? item]) async {
     final nameC = TextEditingController(text: item?.name ?? '');
     final qtyC = TextEditingController(text: item == null ? '1' : raw(item.qty));
-    final unitC = TextEditingController(text: item?.unit ?? '');
     final priceC = TextEditingController(
       text: (item == null || item.price == 0) ? '' : raw(item.price),
     );
+
+    // একক: নতুন হলে ডিফল্ট "পিস"; পুরনো আইটেমের একক তালিকায় না থাকলে "অন্যান্য"-তে দেখাবে
+    final customUnitC = TextEditingController();
+    final startUnit =
+        (item == null || item.unit.isEmpty) ? defaultUnit : item.unit;
+    String selectedUnit;
+    if (unitOptions.contains(startUnit)) {
+      selectedUnit = startUnit;
+    } else {
+      selectedUnit = otherUnit;
+      customUnitC.text = startUnit;
+    }
+
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(item == null ? 'নতুন জিনিস' : 'বদলান'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameC,
-                autofocus: item == null,
-                decoration: const InputDecoration(labelText: 'কী কিনবেন'),
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: qtyC,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(labelText: 'পরিমাণ'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: unitC,
-                      decoration: const InputDecoration(
-                        labelText: 'একক',
-                        hintText: 'কেজি, পিস',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(item == null ? 'নতুন জিনিস' : 'বদলান'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameC,
+                  autofocus: item == null,
+                  decoration: const InputDecoration(labelText: 'কী কিনবেন'),
+                ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: qtyC,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: const InputDecoration(labelText: 'পরিমাণ'),
                       ),
                     ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: selectedUnit,
+                        isExpanded: true,
+                        decoration: const InputDecoration(labelText: 'একক'),
+                        items: [
+                          ...unitOptions,
+                          otherUnit,
+                        ]
+                            .map((u) => DropdownMenuItem(
+                                  value: u,
+                                  child: Text(u),
+                                ))
+                            .toList(),
+                        onChanged: (v) {
+                          if (v == null) return;
+                          setDialogState(() {
+                            selectedUnit = v;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                if (selectedUnit == otherUnit)
+                  TextField(
+                    controller: customUnitC,
+                    decoration: const InputDecoration(
+                      labelText: 'নিজে লিখুন',
+                      hintText: 'যেমন: বস্তা, বোতল',
+                    ),
                   ),
-                ],
-              ),
-              TextField(
-                controller: priceC,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration:
-                    const InputDecoration(labelText: 'একক দাম (৳)'),
-              ),
-            ],
+                TextField(
+                  controller: priceC,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration:
+                      const InputDecoration(labelText: 'একক দাম (৳)'),
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('বাতিল'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('ঠিক আছে'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('বাতিল'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('ঠিক আছে'),
-          ),
-        ],
       ),
     );
     if (ok != true) return;
@@ -270,10 +324,19 @@ class _BazarScreenState extends State<BazarScreen> {
     if (name.isEmpty) return;
     final qty = double.tryParse(toAscii(qtyC.text)) ?? 1;
     final price = double.tryParse(toAscii(priceC.text)) ?? 0;
-    final unit = unitC.text.trim();
+    var unit =
+        selectedUnit == otherUnit ? customUnitC.text.trim() : selectedUnit;
+    if (unit.isEmpty) unit = defaultUnit;
     setState(() {
       if (item == null) {
-        items.add(Item(name, qty, unit, price));
+        items.add(Item(
+          name,
+          qty,
+          unit,
+          price,
+          false,
+          DateTime.now().millisecondsSinceEpoch,
+        ));
       } else {
         item.name = name;
         item.qty = qty;
@@ -328,7 +391,8 @@ class _BazarScreenState extends State<BazarScreen> {
     );
   }
 
-  Widget _sum(String label, double v, Color? color) {
+  // নিচের বারের এক কলাম: লেবেল, টাকা, আর কয়টি জিনিস
+  Widget _sum(String label, double v, int count, Color? color) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -342,6 +406,11 @@ class _BazarScreenState extends State<BazarScreen> {
             color: color,
           ),
         ),
+        const SizedBox(height: 2),
+        Text(
+          '${bnStr(count.toString())}টি জিনিস',
+          style: TextStyle(fontSize: 11, color: color),
+        ),
       ],
     );
   }
@@ -350,9 +419,10 @@ class _BazarScreenState extends State<BazarScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final total = items.fold<double>(0, (s, e) => s + e.total);
-    final bought =
-        items.where((e) => e.done).fold<double>(0, (s, e) => s + e.total);
+    final boughtItems = items.where((e) => e.done).toList();
+    final bought = boughtItems.fold<double>(0, (s, e) => s + e.total);
     final left = total - bought;
+    final leftCount = items.length - boughtItems.length;
     final view = [
       ...items.where((e) => !e.done),
       ...items.where((e) => e.done),
@@ -463,7 +533,28 @@ class _BazarScreenState extends State<BazarScreen> {
                               color: item.done ? Colors.grey : null,
                             ),
                           ),
-                          subtitle: Text(sub),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(sub),
+                              if (item.created > 0)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 3),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.access_time, size: 13),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          fmtDateTime(item.created),
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
                           trailing: Text(
                             '৳${fmt(item.total)}',
                             style: const TextStyle(
@@ -503,9 +594,10 @@ class _BazarScreenState extends State<BazarScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _sum('মোট', total, null),
-              _sum('কেনা হয়েছে', bought, Colors.green.shade800),
-              _sum('বাকি', left, Colors.red.shade700),
+              _sum('মোট', total, items.length, null),
+              _sum('কেনা হয়েছে', bought, boughtItems.length,
+                  Colors.green.shade800),
+              _sum('বাকি', left, leftCount, Colors.red.shade700),
             ],
           ),
         ),
@@ -554,7 +646,7 @@ class _NotesScreenState extends State<NotesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('সব নোট'),
+        title: Text('সব নোট (${bnStr(notes.length.toString())}টি)'),
         centerTitle: true,
       ),
       body: notes.isEmpty
